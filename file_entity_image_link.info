@@ -1,0 +1,7 @@
+name = File entity image link
+description = Create file entity image link formatter.
+core = 7.x
+
+dependencies[] = file_entity
+dependencies[] = colorbox
+

@@ -1,0 +1,205 @@
+<?php
+/**
+ * @file
+ * Provides integration between Media file entity fields and the Colorbox module.
+ */
+/**
+ * Implements hook_theme().
+ */
+function file_entity_image_link_theme() {
+  return array(
+    'file_entity_image_link_formatter' => array(
+      'variables' => array(
+        'image' => array(
+          'style_name' => NULL,
+          'path' => NULL,
+          'width' => NULL,
+          'height' => array(),
+          'alt' => NULL,
+          'title' => NULL,
+        ),
+        'link' => array(
+           'path' => NULL,
+           'classes' => array(),
+           'title' => NULL,
+        ),
+        'use_colorbox' => NULL,
+        'img_align' => 'none',
+      ),
+    ),
+  );
+}
+/**
+ * Perform alterations on file formatters.
+ *
+ * @param $info
+ *   Array of information on file formatters exposed by
+ *   hook_file_formatter_info() implementations.
+ */
+function file_entity_image_link_file_formatter_info_alter(&$info) {
+  $info['image_link'] = array(
+    'label' => 'Link to image',
+    'view callback' => 'file_entity_image_link_file_formatter_image_link_view',
+    'settings callback' => 'file_entity_image_link_file_formatter_image_link_settings',
+    'default settings' => array(
+      'image_style' => array(
+        'alt' => '[file:field_file_image_alt_text]',
+        'title' => '[file:field_file_image_title_text]',
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_file_formatter_FORMATTER_view().
+ *
+ * This function provides a bridge to the field formatter API, so that file
+ * field formatters can be reused for displaying the file entity's file
+ * pseudo-field.
+ */
+function file_entity_image_link_file_formatter_image_link_view($file, $display, $langcode) {
+  // Prevent PHP notices when trying to read empty files.
+  // @see http://drupal.org/node/681042
+  if (!$file->filesize) {
+    return;
+  }
+
+  // Do not bother proceeding if this file does not have an image mime type.
+  if (strpos($file->filemime, 'image/') !== 0) {
+    return;
+  }
+
+  if (file_entity_file_is_readable($file) && isset($file->image_dimensions)) {
+    // We don't sanitize here.
+    // @see http://drupal.org/node/1553094#comment-6257382
+    // Theme function will take care of escaping.
+    $replace_options = array(
+      'clear' => 1,
+      'sanitize' => 0,
+    );
+    if (empty($display['settings']['image_link_style'])) {
+      $file_url = file_create_url($file->uri);
+    }
+    else {
+      $file_url = image_style_url($display['settings']['image_link_style'], $file->uri);
+    }
+    $element = array(
+      '#theme' => 'file_entity_image_link_formatter',
+      '#image' => array(
+        'style_name' => $display['settings']['image_style'],
+        'path' => $file->uri,
+        'width' => $file->image_dimensions['width'],
+        'height' => $file->image_dimensions['height'],
+        'alt' => token_replace($display['settings']['alt'], array('file' => $file), $replace_options),
+        'title' => token_replace($display['settings']['title'], array('file' => $file), $replace_options),
+      ),
+    '#link' => array('path' => $file_url, 'title' =>  token_replace($display['settings']['title'], array('file' => $file), $replace_options),),
+    '#use_colorbox' => $display['settings']['use_colorbox'],
+    '#img_align' => $display['settings']['img_align'],
+    );
+    return $element;
+  }
+}
+
+/**
+ * Implements hook_file_formatter_FORMATTER_settings().
+ *
+ * This function provides a bridge to the field formatter API, so that file
+ * field formatters can be reused for displaying the file entity's file
+ * pseudo-field.
+ */
+function file_entity_image_link_file_formatter_image_link_settings($form, &$form_state, $settings) {
+  $element = array();
+  $element['image_style'] = array(
+    '#title' => t('Image style'),
+    '#type' => 'select',
+    '#options' => image_style_options(FALSE),
+    '#default_value' => $settings['image_style'],
+    '#empty_option' => t('None (original image)'),
+  );
+
+  // For image files we allow the alt attribute (required in HTML).
+  $element['alt'] = array(
+    '#title' => t('Alt attribute'),
+    '#description' => t('The text to use as value for the <em>img</em> tag <em>alt</em> attribute.'),
+    '#type' => 'textfield',
+    '#default_value' => $settings['alt'],
+  );
+
+  // Allow the setting of the title attribute.
+  $element['title'] = array(
+    '#title' => t('Title attribute'),
+    '#description' => t('The text to use as value for the <em>img</em> tag <em>title</em> attribute.'),
+    '#type' => 'textfield',
+    '#default_value' => $settings['title'],
+  );
+  $element['image_link_style'] = array(
+    '#title' => t('Link image to'),
+    '#type' => 'select',
+    '#options' => image_style_options(FALSE),
+    '#default_value' => $settings['image_link_style'],
+    '#empty_option' => t('None (original image)'),
+  );
+  $element['use_colorbox'] = array(
+    '#title' => t('Use colorbox'),
+    '#type' => 'checkbox',
+    '#default_value' => $settings['use_colorbox'],
+  );
+  $element['img_align'] = array(
+    '#title' => t('Choose align'),
+    '#type' => 'select',
+    '#options' => array('align-none' => 'none', 'align-left' => 'align-left', 'align-right' => 'align-right'),
+    '#default_value' => $settings['img_align'],
+  );
+  if (module_exists('token')) {
+    $element['alt']['#description'] .= t('This field supports tokens.');
+    $element['title']['#description'] .= t('This field supports tokens.');
+    $element['tokens'] = array(
+      '#theme' => 'token_tree',
+      '#token_types' => array('file'),
+      '#dialog' => TRUE,
+    );
+  }
+  return $element;
+}
+
+
+/**
+ * Returns HTML for an Colorbox image field formatter.
+ *
+ * @param $variables
+ *   An associative array containing:
+ *   - item: An array of image data.
+ *   - image_style: An optional image style.
+ *   - path: An array containing the link 'path' and link 'options'.
+ *
+ * @ingroup themeable
+ */
+function theme_file_entity_image_link_formatter($variables) {
+   $classes = array();
+  if ($variables['use_colorbox'] == 1) {
+    $classes = array('colorbox', $variables['img_align']);
+  }
+  $image = '';
+  if (!empty($variables['image']['style_name'])) {
+    $image = theme('image_style', $variables['image']);
+  }
+  else {
+    $image = theme('image', $variables['image']);
+  }
+
+  $options = array(
+    'html' => TRUE,
+    'attributes' => array(
+      'class' => $classes,
+      'rel' => 'gallery[]',
+      'title' => $variables['link']['title'],
+    )
+  );
+  if (arg(2) != ('edit')&& arg(2) != 'format-form') {
+    return l($image, $variables['link']['path'], $options);
+  }
+  else {
+    return $image;
+  }
+}
